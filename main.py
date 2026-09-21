@@ -1,46 +1,66 @@
 import os
+import time
 import pysrt
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-from googletrans import Translator
+from deep_translator import GoogleTranslator
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 
-TOKEN = os.environ.get("TELEGRAM_TOKEN")
-translator = Translator()
+TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("שלום! שלח לי קובץ .srt ואני אתרגם אותו לעברית.")
+def start(update, context):
+    update.message.reply_text("שלום! שלח לי קובץ .srt ואתרגם אותו לעברית.")
 
-async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def handle_document(update, context):
     document = update.message.document
-    
-    if not document.file_name.lower().endswith('.srt'):
-        await update.message.reply_text("אנא שלח קובץ בפורמט .srt בלבד.")
+    if not document.file_name.endswith('.srt'):
+        update.message.reply_text("אנא שלח קובץ בסיומת .srt בלבד.")
         return
 
-    await update.message.reply_text("הקובץ התקבל! מתחיל בתרגום, מייד אשלח את הקובץ המעודכן...")
-
-    file = await context.bot.get_file(document.file_id)
+    update.message.reply_text("מקבל את הקובץ ומתחיל בתרגום לעברית... נא להמתין.")
+    file = context.bot.get_file(document.file_id)
     input_path = f"input_{document.file_id}.srt"
-    await file.download_to_drive(input_path)
-
     output_filename = f"translated_{document.file_name}"
+    file.download(input_path)
+
+    start_time = time.time()
 
     try:
-        subs = pysrt.open(input_path, encoding='utf-8')
-        
-        for sub in subs:
-            if sub.text.strip():
-                translated = translator.translate(sub.text, dest='he')
-                sub.text = translated.text
+        # פתיחת הקובץ עם תמיכה בקידוד שונה
+        try:
+            subs = pysrt.open(input_path, encoding='utf-8')
+        except Exception:
+            subs = pysrt.open(input_path, encoding='latin-1')
+
+        translator = GoogleTranslator(source='auto', target='he')
+
+        # תרגום בקבוצות כדי למנוע חסימות מ-Google
+        batch_size = 20
+        for i in range(0, len(subs), batch_size):
+            batch = subs[i:i + batch_size]
+            for sub in batch:
+                text = sub.text.strip()
+                if text:
+                    try:
+                        translated_text = translator.translate(text)
+                        if translated_text:
+                            sub.text = translated_text
+                    except Exception as err:
+                        print(f"Error translating line: {err}")
+            time.sleep(0.3)  # הפסקה קצרה למניעת חסימה
 
         subs.save(output_filename, encoding='utf-8')
 
+        elapsed_time = int(time.time() - start_time)
+        minutes = elapsed_time // 60
+        seconds = elapsed_time % 60
+        time_str = f"{minutes} דקות ו-{seconds} שניות" if minutes > 0 else f"{seconds} שניות"
+
         with open(output_filename, 'rb') as doc:
-            await update.message.reply_document(document=doc, filename=output_filename)
-
+            update.message.reply_document(
+                document=doc, 
+                caption=f"הנה הקובץ המתורגם לעברית!\n⏱️ זמן תרגום: {time_str}"
+            )
     except Exception as e:
-        await update.message.reply_text(f"תרחשה שגיאה בזמן התרגום: {str(e)}")
-
+        update.message.reply_text(f"תרגום נכשל: {e}")
     finally:
         if os.path.exists(input_path):
             os.remove(input_path)
@@ -49,12 +69,12 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 if __name__ == '__main__':
     if not TOKEN:
-        print("Error: No TELEGRAM_TOKEN provided!")
+        print("Error: No TELEGRAM_TOKEN provided")
         exit(1)
-        
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    
-    print("Bot is running...")
-    app.run_polling()
+
+    updater = Updater(TOKEN, use_context=True)
+    dp = updater.dispatcher
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(MessageHandler(Filters.document, handle_document))
+    updater.start_polling()
+    updater.idle()

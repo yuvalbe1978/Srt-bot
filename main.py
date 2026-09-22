@@ -24,38 +24,32 @@ def handle_document(update, context):
     start_time = time.time()
 
     try:
-        # ניסיון פתיחה בקידודים נפוצים
         try:
             subs = pysrt.open(input_path, encoding='utf-8')
         except Exception:
             subs = pysrt.open(input_path, encoding='latin-1')
 
-        translator = GoogleTranslator(source='auto', target='he')
+        # שימוש בקוד 'iw' המוגדר עבור עברית ב-deep-translator
+        translator = GoogleTranslator(source='auto', target='iw')
 
-        # איחוד 30 שורות למקשר ייחודי כדי למנוע חסימת Google Translate
-        batch_size = 30
+        batch_size = 20
         for i in range(0, len(subs), batch_size):
             batch = subs[i:i + batch_size]
             
-            # יצירת טקסט מאוחד עם מפריד ייחודי
             combined_text = "\n===SEP===\n".join([s.text if s.text.strip() else " " for s in batch])
             
             try:
                 translated_combined = translator.translate(combined_text)
                 translated_lines = translated_combined.split("\n===SEP===\n")
                 
-                # פירוק בחזרה לשורות הכתוביות
                 if len(translated_lines) == len(batch):
                     for j, sub in enumerate(batch):
                         sub.text = translated_lines[j].strip()
                 else:
-                    # גיבוי: תרגום שורה-שורה אם השרשור השתבש
                     for sub in batch:
                         if sub.text.strip():
                             sub.text = translator.translate(sub.text)
             except Exception as e:
-                print(f"Batch translation error: {e}")
-                # ניסיון חלופי יחידני במקרה של תקלה בגוש
                 for sub in batch:
                     if sub.text.strip():
                         try:
@@ -63,7 +57,7 @@ def handle_document(update, context):
                         except Exception:
                             pass
 
-            time.sleep(0.5) # השהיה קצרה לשמירה על יציבות
+            time.sleep(0.3)
 
         subs.save(output_filename, encoding='utf-8')
 

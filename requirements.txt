@@ -3,5 +3,7 @@ google-genai
 ffmpeg-python
 requests
 pysrt
+deep_translator
+
 
 

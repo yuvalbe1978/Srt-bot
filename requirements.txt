@@ -1,9 +1,9 @@
 python-telegram-bot==13.15
 google-genai
 ffmpeg-python
-requests
 pysrt
 deep_translator
+requests
 
 
 
